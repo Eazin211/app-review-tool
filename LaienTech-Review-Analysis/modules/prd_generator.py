@@ -47,11 +47,15 @@ class PRDGenerator:
         if self.client and self.api_key and findings:
             if progress_callback:
                 progress_callback('Using LLM to generate requirements...')
-            requirements = self._llm_requirement_generation(findings, themes, goals, app_info)
-        else:
+            requirements = self._llm_requirement_generation(findings, themes, goals, app_info, progress_callback)
+        elif findings:
             if progress_callback:
                 progress_callback('Using rule-based requirements...')
             requirements = self._rule_based_requirements(findings, themes, goals)
+        else:
+            if progress_callback:
+                progress_callback('No findings available, generating from statistics...')
+            requirements = self._requirements_from_statistics(analysis, themes, goals, app_info)
 
         requirements = self._prioritize_requirements(requirements)
 
@@ -97,7 +101,8 @@ class PRDGenerator:
         findings: list[dict],
         themes: list[dict],
         goals: list[str],
-        app_info: dict
+        app_info: dict,
+        progress_callback=None
     ) -> list[dict]:
         findings_text = json.dumps(findings[:20], indent=2, ensure_ascii=False)
         goals_text = ', '.join(goals)
@@ -160,7 +165,11 @@ Requirements:"""
             return requirements
 
         except (json.JSONDecodeError, Exception):
-            return self._rule_based_requirements(findings, themes, goals)
+            if progress_callback:
+                progress_callback('LLM requirement generation failed, falling back to rule-based')
+            return self._rule_based_requirements(findings, themes, goals) if findings else self._requirements_from_statistics(
+                {'statistics': {'rating_breakdown': {}}, 'total_reviews_analyzed': 0}, themes, goals, {}
+            )
 
     def _rule_based_requirements(
         self,
@@ -197,6 +206,114 @@ Requirements:"""
             }
             requirements.append(requirement)
             req_id += 1
+
+        return requirements
+
+    def _requirements_from_statistics(
+        self,
+        analysis: dict,
+        themes: list[dict],
+        goals: list[str],
+        app_info: dict
+    ) -> list[dict]:
+        requirements = []
+        req_id = 1
+        stats = analysis.get('statistics', {})
+        total = analysis.get('total_reviews_analyzed', 0)
+        app_name = app_info.get('app_name', 'the app')
+
+        rating_breakdown = stats.get('rating_breakdown', {})
+        positive = rating_breakdown.get('positive', 0)
+        neutral = rating_breakdown.get('neutral', 0)
+        negative = rating_breakdown.get('negative', 0)
+
+        if negative > 0:
+            neg_pct = round(negative / total * 100, 1) if total > 0 else 0
+            requirements.append({
+                'id': f'REQ-{req_id:03d}',
+                'statement': f'Address {negative} low-rated reviews ({neg_pct}% of total) — investigate and resolve user dissatisfaction',
+                'priority': 'Must Have',
+                'type': 'bug_fix',
+                'source_findings': ['Statistical analysis'],
+                'source_review_ids': [],
+                'rationale': f'{negative} users expressed significant dissatisfaction with 1-2 star ratings',
+                'acceptance_criteria': [
+                    f'Reduce the number of 1-2 star rated issues by at least 30%',
+                    f'Identify root causes of negative feedback through review content analysis',
+                    f'Implement fixes for the most common complaints'
+                ]
+            })
+            req_id += 1
+
+        if neutral > 0:
+            neu_pct = round(neutral / total * 100, 1) if total > 0 else 0
+            requirements.append({
+                'id': f'REQ-{req_id:03d}',
+                'statement': f'Improve experience for {neutral} neutral-rated reviews ({neu_pct}%) to convert them to positive',
+                'priority': 'Should Have',
+                'type': 'improvement',
+                'source_findings': ['Statistical analysis'],
+                'source_review_ids': [],
+                'rationale': f'{neutral} users gave neutral ratings — opportunity to convert to positive',
+                'acceptance_criteria': [
+                    'Analyze neutral review content for specific improvement areas',
+                    'Implement targeted improvements based on review feedback',
+                    'Target converting at least 20% of neutral users to positive'
+                ]
+            })
+            req_id += 1
+
+        if positive > 0:
+            pos_pct = round(positive / total * 100, 1) if total > 0 else 0
+            requirements.append({
+                'id': f'REQ-{req_id:03d}',
+                'statement': f'Maintain and enhance features praised by {positive} positive reviewers ({pos_pct}%)',
+                'priority': 'Nice to Have',
+                'type': 'improvement',
+                'source_findings': ['Statistical analysis'],
+                'source_review_ids': [],
+                'rationale': f'{positive} users gave positive ratings — identify and reinforce what works well',
+                'acceptance_criteria': [
+                    'Identify features mentioned positively in reviews',
+                    'Ensure positive user experience is maintained',
+                    'Consider expanding popular features'
+                ]
+            })
+            req_id += 1
+
+        for goal in goals:
+            if goal and goal != 'general':
+                requirements.append({
+                    'id': f'REQ-{req_id:03d}',
+                    'statement': f'Analyze and address reviews related to: {goal}',
+                    'priority': 'Should Have',
+                    'type': 'improvement',
+                    'source_findings': ['Goal-directed analysis'],
+                    'source_review_ids': [],
+                    'rationale': f'User-specified analysis goal: {goal}',
+                    'acceptance_criteria': [
+                        f'Identify reviews related to "{goal}"',
+                        f'Extract key insights about {goal} from review content',
+                        f'Propose actionable improvements related to {goal}'
+                    ]
+                })
+                req_id += 1
+
+        if not requirements:
+            requirements.append({
+                'id': f'REQ-{req_id:03d}',
+                'statement': f'General improvement: Review and enhance overall user experience for {app_name}',
+                'priority': 'Should Have',
+                'type': 'improvement',
+                'source_findings': ['Baseline analysis'],
+                'source_review_ids': [],
+                'rationale': 'Based on available review data, general UX improvements recommended',
+                'acceptance_criteria': [
+                    'Review all available user feedback',
+                    'Identify common themes in user experience',
+                    'Implement improvements based on identified themes'
+                ]
+            })
 
         return requirements
 

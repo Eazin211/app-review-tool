@@ -108,15 +108,20 @@ class ReviewAnalyzer:
                 progress_callback(f'Analyzing batch {i+1}/{len(batches)} ({len(batch)} reviews)...')
 
             try:
-                themes, findings = self._analyze_batch_with_llm(batch, goals)
+                themes, findings = self._analyze_batch_with_llm(batch, goals, progress_callback)
                 all_themes.extend(themes)
                 all_findings.extend(findings)
             except Exception as e:
                 if progress_callback:
-                    progress_callback(f'Batch {i+1} LLM analysis failed: {str(e)}')
+                    progress_callback(f'Batch {i+1} LLM analysis failed: {type(e).__name__} — using statistical fallback for this batch')
                 themes, findings = self._statistical_baseline_analysis(batch, goals)
                 all_themes.extend(themes)
                 all_findings.extend(findings)
+
+        if not all_themes and not all_findings:
+            if progress_callback:
+                progress_callback('All LLM batches failed, using full statistical baseline')
+            all_themes, all_findings = self._statistical_baseline_analysis(reviews, goals)
 
         merged_themes = self._merge_themes(all_themes)
         merged_findings = self._merge_findings(all_findings)
@@ -130,7 +135,7 @@ class ReviewAnalyzer:
             batches.append(batch)
         return batches
 
-    def _analyze_batch_with_llm(self, reviews: list[dict], goals: list[str]) -> tuple[list[dict], list[dict]]:
+    def _analyze_batch_with_llm(self, reviews: list[dict], goals: list[str], progress_callback=None) -> tuple[list[dict], list[dict]]:
         reviews_text = self._format_reviews_for_llm(reviews)
 
         goal_text = ', '.join(goals) if goals else 'general feedback'
@@ -195,12 +200,19 @@ Reviews to analyze:
             themes = parsed.get('themes', [])
             findings = parsed.get('findings', [])
 
+            if progress_callback:
+                progress_callback(f'LLM returned {len(themes)} themes, {len(findings)} findings for batch')
+
             return themes, findings
 
-        except json.JSONDecodeError:
-            return [], []
-        except Exception:
-            return [], []
+        except json.JSONDecodeError as e:
+            if progress_callback:
+                progress_callback(f'LLM JSON parse error: {str(e)} — falling back to statistical baseline')
+            raise
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f'LLM call failed: {type(e).__name__}: {str(e)} — falling back to statistical baseline')
+            raise
 
     def _format_reviews_for_llm(self, reviews: list[dict]) -> str:
         lines = []
