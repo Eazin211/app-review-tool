@@ -107,6 +107,8 @@ def init_session_state():
         st.session_state.goals = []
     if 'running' not in st.session_state:
         st.session_state.running = False
+    if 'rss_metadata' not in st.session_state:
+        st.session_state.rss_metadata = {}
 
 
 def log(message: str):
@@ -204,10 +206,11 @@ def render_sidebar():
         st.markdown("### Quick Actions")
         if st.button("🔄 Reset Pipeline", use_container_width=True):
             for key in list(st.session_state.keys()):
-                if key not in ('workflow_stage', 'logs', 'goals', 'app_info'):
+                if key not in ('workflow_stage', 'logs', 'goals', 'app_info', 'rss_metadata'):
                     del st.session_state[key]
             st.session_state.workflow_stage = 0
             st.session_state.logs = []
+            st.session_state.rss_metadata = {}
             st.success("Pipeline reset!")
             st.rerun()
 
@@ -234,21 +237,24 @@ def run_analysis_pipeline(max_pages: int):
 
         update_progress(2, "Collecting review data...")
         source = None
+        fetch_metadata = {}
 
         if st.session_state.get('app_info', {}).get('is_sample'):
             reviews = load_sample_data()
             source = 'sample'
+            st.session_state.rss_metadata = {}
             log(f"Loaded {len(reviews)} sample reviews")
         elif st.session_state.reviews_raw:
             reviews = st.session_state.reviews_raw
             source = 'imported'
+            st.session_state.rss_metadata = {}
             log(f"Using {len(reviews)} imported reviews")
         elif st.session_state.app_info.get('app_id'):
             app_id = st.session_state.app_info['app_id']
             country = st.session_state.app_info.get('country', 'us')
 
             with st.spinner('Fetching reviews from App Store RSS...'):
-                reviews = fetch_reviews(
+                reviews, fetch_metadata = fetch_reviews(
                     app_id=app_id,
                     country=country,
                     max_pages=max_pages,
@@ -267,6 +273,13 @@ def run_analysis_pipeline(max_pages: int):
             return
 
         st.session_state.reviews_raw = reviews
+
+        if fetch_metadata.get('rss_limit_reached'):
+            st.session_state.rss_metadata = fetch_metadata
+            log("RSS 500-review limit reached")
+        elif fetch_metadata.get('note'):
+            st.session_state.rss_metadata = fetch_metadata
+            log(f"RSS note: {fetch_metadata['note']}")
 
         if not st.session_state.app_info.get('app_name'):
             app_names = [r.get('app_name', '') for r in reviews if r.get('app_name')]
@@ -446,6 +459,12 @@ def render_raw_data_tab():
     reviews = st.session_state.get('reviews_raw', [])
     st.markdown(f"### 📥 Raw Reviews ({len(reviews)} total)")
 
+    rss_meta = st.session_state.get('rss_metadata', {})
+    if rss_meta.get('rss_limit_reached'):
+        st.warning(f"⚠️ iTunes RSS API limitation: {rss_meta.get('note', 'current data source only provides the latest 500 reviews')}")
+    elif rss_meta.get('note'):
+        st.info(f"ℹ️ Data source note: {rss_meta['note']}")
+
     if reviews:
         df = pd.DataFrame(reviews)
         display_cols = [c for c in ['review_id', 'title', 'content', 'rating', 'author', 'version', 'date'] if c in df.columns]
@@ -500,6 +519,10 @@ def render_analysis_tab():
     if not analysis:
         st.info("No analysis results yet. Please run the analysis pipeline first.")
         return
+
+    rss_meta = st.session_state.get('rss_metadata', {})
+    if rss_meta.get('rss_limit_reached'):
+        st.warning(f"⚠️ iTunes RSS API limitation: {rss_meta.get('note', 'current data source only provides the latest 500 reviews')}")
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -770,6 +793,11 @@ def render_validation_tab():
 
     st.markdown("---")
     st.markdown("### 📤 Export All Results")
+
+    rss_meta_val = st.session_state.get('rss_metadata', {})
+    if rss_meta_val.get('rss_limit_reached'):
+        st.warning(f"⚠️ Data limitation: {rss_meta_val.get('note', 'current data source only provides the latest 500 reviews')}")
+
     all_data = {
         'app_info': st.session_state.get('app_info', {}),
         'goals': st.session_state.get('goals', []),
@@ -780,6 +808,7 @@ def render_validation_tab():
         'prd': st.session_state.get('prd', {}),
         'test_results': st.session_state.get('test_results', {}),
         'validation': st.session_state.get('validation', {}),
+        'rss_metadata': st.session_state.get('rss_metadata', {}),
         'exported_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     }
     st.download_button(
