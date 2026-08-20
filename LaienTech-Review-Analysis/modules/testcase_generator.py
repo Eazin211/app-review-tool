@@ -32,18 +32,18 @@ class TestCaseGenerator:
         progress_callback=None
     ) -> dict:
         if progress_callback:
-            progress_callback('生成测试用例...')
+            progress_callback('Generating test cases...')
 
         requirements = prd.get('requirements', [])
         reviews_map = self._build_reviews_map(analysis)
 
         if self.client and self.api_key and requirements:
             if progress_callback:
-                progress_callback('使用LLM生成测试用例...')
+                progress_callback('Using LLM to generate test cases...')
             test_cases = self._llm_test_case_generation(requirements, reviews_map, prd)
         else:
             if progress_callback:
-                progress_callback('使用规则基线生成测试用例...')
+                progress_callback('Using rule-based test cases...')
             test_cases = self._rule_based_test_cases(requirements, reviews_map)
 
         test_cases = self._enrich_test_cases(test_cases, requirements)

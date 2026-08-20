@@ -29,14 +29,14 @@ def clean_reviews(
         cleaned = _remove_empty_reviews(cleaned)
         stats['removed_empty'] = before - len(cleaned)
         if progress_callback:
-            progress_callback(f'移除空评论: {stats["removed_empty"]} 条')
+            progress_callback(f'Removed empty reviews: {stats["removed_empty"]}')
 
     if deduplicate:
         before = len(cleaned)
         cleaned = _deduplicate_reviews(cleaned)
         stats['removed_duplicates'] = before - len(cleaned)
         if progress_callback:
-            progress_callback(f'移除重复评论: {stats["removed_duplicates"]} 条')
+            progress_callback(f'Removed duplicate reviews: {stats["removed_duplicates"]}')
 
     if normalize:
         before = len(cleaned)

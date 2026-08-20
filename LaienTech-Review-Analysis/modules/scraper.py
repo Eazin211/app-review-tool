@@ -59,17 +59,17 @@ def fetch_reviews(
             data = resp.json()
         except requests.exceptions.RequestException as e:
             if progress_callback:
-                progress_callback(f'分页 {page} 请求失败: {str(e)}')
+                progress_callback(f'Page {page} request failed: {str(e)}')
             break
         except json.JSONDecodeError:
             if progress_callback:
-                progress_callback(f'分页 {page} 响应解析失败')
+                progress_callback(f'Page {page} response parse failed')
             break
 
         feed_entry = data.get('feed', {}).get('entry', [])
         if not feed_entry or not isinstance(feed_entry, list):
             if progress_callback:
-                progress_callback(f'分页 {page} 无更多数据，停止抓取')
+                progress_callback(f'Page {page} no more data, stopping')
             break
 
         for entry in feed_entry:
@@ -79,7 +79,7 @@ def fetch_reviews(
                     all_reviews.append(review)
 
         if progress_callback:
-            progress_callback(f'已抓取 {len(all_reviews)} 条评论 (分页 {page})')
+            progress_callback(f'Fetched {len(all_reviews)} reviews (page {page})')
 
         if page < max_pages:
             time.sleep(delay)

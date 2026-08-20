@@ -37,7 +37,7 @@ class PRDGenerator:
         goals = goals or ['general']
 
         if progress_callback:
-            progress_callback('生成PRD文档...')
+            progress_callback('Generating PRD document...')
 
         findings = analysis.get('findings', [])
         themes = analysis.get('themes', [])
@@ -46,11 +46,11 @@ class PRDGenerator:
 
         if self.client and self.api_key and findings:
             if progress_callback:
-                progress_callback('使用LLM生成需求...')
+                progress_callback('Using LLM to generate requirements...')
             requirements = self._llm_requirement_generation(findings, themes, goals, app_info)
         else:
             if progress_callback:
-                progress_callback('使用规则基线生成需求...')
+                progress_callback('Using rule-based requirements...')
             requirements = self._rule_based_requirements(findings, themes, goals)
 
         requirements = self._prioritize_requirements(requirements)

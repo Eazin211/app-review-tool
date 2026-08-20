@@ -43,18 +43,18 @@ class ReviewAnalyzer:
         goals = goals or ['general']
 
         if progress_callback:
-            progress_callback('开始AI动态分析...')
+            progress_callback('Starting AI dynamic analysis...')
 
         statistics = self._compute_statistics(reviews)
 
         if self.client and self.api_key:
             if progress_callback:
-                progress_callback('使用LLM模型进行主题发现...')
+                progress_callback('Using LLM model for theme discovery...')
             themes, findings = self._llm_theme_discovery(reviews, goals, max_batch_size, progress_callback)
             model_used = True
         else:
             if progress_callback:
-                progress_callback('API密钥未配置，使用统计基线分析...')
+                progress_callback('API key not configured, using statistical baseline...')
             themes, findings = self._statistical_baseline_analysis(reviews, goals)
             model_used = False
 
@@ -105,7 +105,7 @@ class ReviewAnalyzer:
 
         for i, batch in enumerate(batches):
             if progress_callback:
-                progress_callback(f'分析批次 {i+1}/{len(batches)} ({len(batch)} 条评论)...')
+                progress_callback(f'Analyzing batch {i+1}/{len(batches)} ({len(batch)} reviews)...')
 
             try:
                 themes, findings = self._analyze_batch_with_llm(batch, goals)
@@ -113,7 +113,7 @@ class ReviewAnalyzer:
                 all_findings.extend(findings)
             except Exception as e:
                 if progress_callback:
-                    progress_callback(f'批次 {i+1} LLM分析失败: {str(e)}')
+                    progress_callback(f'Batch {i+1} LLM analysis failed: {str(e)}')
                 themes, findings = self._statistical_baseline_analysis(batch, goals)
                 all_themes.extend(themes)
                 all_findings.extend(findings)

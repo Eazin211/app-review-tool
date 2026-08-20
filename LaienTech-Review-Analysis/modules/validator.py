@@ -15,7 +15,7 @@ class TraceabilityValidator:
         progress_callback=None
     ) -> dict:
         if progress_callback:
-            progress_callback('验证追溯链...')
+            progress_callback('Validating traceability chain...')
 
         results = {
             'valid': True,
