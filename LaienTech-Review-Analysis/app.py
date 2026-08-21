@@ -126,6 +126,7 @@ def render_sidebar():
             ['App Store URL', 'Sample Data', 'Import JSON', 'Import CSV'],
             help="Choose how to load review data"
         )
+        st.session_state.current_data_source = data_source
 
         if data_source == 'App Store URL':
             app_url = st.text_input(
@@ -223,6 +224,18 @@ def run_analysis_pipeline(max_pages: int):
     st.session_state.logs = []
     st.session_state.workflow_stage = 1
 
+    st.session_state.reviews_clean = {}
+    st.session_state.clean_stats = {}
+    st.session_state.analysis = {}
+    st.session_state.prd = {}
+    st.session_state.test_results = {}
+    st.session_state.validation = {}
+    st.session_state.rss_metadata = {}
+
+    data_source = st.session_state.get('current_data_source', '')
+    if data_source in ('App Store URL', 'Sample Data'):
+        st.session_state.reviews_raw = {}
+
     progress_placeholder = st.empty()
     status_placeholder = st.empty()
 
@@ -263,7 +276,44 @@ def run_analysis_pipeline(max_pages: int):
             source = 'rss'
             log(f"Fetched {len(reviews)} reviews from RSS")
 
-            if not reviews:
+            if fetch_metadata.get('rss_empty'):
+                st.session_state.rss_metadata = fetch_metadata
+                st.warning("⚠️ iTunes RSS API currently returns no reviews for this app. The RSS API has been progressively deprecated by Apple since 2026.")
+                st.info("**Please load data using one of these methods:**")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("📂 Load Sample Data (Workout for Women)", type="secondary", use_container_width=True, key="load_sample_fallback"):
+                        reviews = load_sample_data()
+                        source = 'sample'
+                        log(f"Loaded {len(reviews)} sample reviews as fallback")
+                        st.success(f"✅ Loaded {len(reviews)} sample reviews!")
+
+                with col2:
+                    fallback_file = st.file_uploader("📤 Upload JSON/CSV file", type=['json', 'csv'], key="fallback_upload", help="Import your own review data")
+                    if fallback_file:
+                        try:
+                            fallback_file.seek(0)
+                            content = fallback_file.read().decode('utf-8')
+                            if fallback_file.name.endswith('.json'):
+                                data = json.loads(content)
+                                if isinstance(data, list):
+                                    reviews = data
+                                elif isinstance(data, dict) and 'reviews' in data:
+                                    reviews = data['reviews']
+                            elif fallback_file.name.endswith('.csv'):
+                                import io
+                                df = pd.read_csv(io.StringIO(content))
+                                reviews = df.to_dict('records')
+                            source = 'imported'
+                            log(f"Loaded {len(reviews)} reviews from uploaded file")
+                            st.success(f"✅ Loaded {len(reviews)} reviews from file!")
+                        except Exception as e:
+                            st.error(f"Failed to load file: {str(e)}")
+
+                if not reviews or (isinstance(reviews, list) and len(reviews) == 0):
+                    st.stop()
+            elif not reviews:
                 st.warning("RSS fetch returned no reviews, falling back to sample data.")
                 reviews = load_sample_data()
                 source = 'sample_fallback'
@@ -460,7 +510,9 @@ def render_raw_data_tab():
     st.markdown(f"### 📥 Raw Reviews ({len(reviews)} total)")
 
     rss_meta = st.session_state.get('rss_metadata', {})
-    if rss_meta.get('rss_limit_reached'):
+    if rss_meta.get('rss_empty'):
+        st.warning(f"⚠️ {rss_meta.get('note', 'iTunes RSS API returned no reviews for this app.')}")
+    elif rss_meta.get('rss_limit_reached'):
         st.warning(f"⚠️ iTunes RSS API limitation: {rss_meta.get('note', 'current data source only provides the latest 500 reviews')}")
     elif rss_meta.get('note'):
         st.info(f"ℹ️ Data source note: {rss_meta['note']}")
@@ -521,7 +573,9 @@ def render_analysis_tab():
         return
 
     rss_meta = st.session_state.get('rss_metadata', {})
-    if rss_meta.get('rss_limit_reached'):
+    if rss_meta.get('rss_empty'):
+        st.warning(f"⚠️ {rss_meta.get('note', 'iTunes RSS API returned no reviews for this app.')}")
+    elif rss_meta.get('rss_limit_reached'):
         st.warning(f"⚠️ iTunes RSS API limitation: {rss_meta.get('note', 'current data source only provides the latest 500 reviews')}")
 
     col1, col2, col3 = st.columns(3)

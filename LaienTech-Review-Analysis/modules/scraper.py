@@ -105,8 +105,16 @@ def fetch_reviews(
         'rss_max_pages': MAX_RSS_PAGES,
         'effective_pages_used': page if all_reviews else 0,
         'country_requested': country,
+        'rss_empty': False,
         'note': ''
     }
+
+    if not all_reviews:
+        metadata['rss_empty'] = True
+        metadata['note'] = 'iTunes RSS API currently returns no reviews for this app. The API has been progressively deprecated by Apple since 2026. Please try importing local data or using sample data.'
+        if progress_callback:
+            progress_callback('RSS returned 0 reviews — iTunes API may be deprecated for this app')
+        return all_reviews, metadata
 
     if rss_limit_reached:
         metadata['note'] = 'current data source only provides the latest 500 reviews'
