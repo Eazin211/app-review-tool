@@ -37,14 +37,19 @@ class TestCaseGenerator:
         requirements = prd.get('requirements', [])
         reviews_map = self._build_reviews_map(analysis)
 
-        if self.client and self.api_key and requirements:
-            if progress_callback:
-                progress_callback('Using LLM to generate test cases...')
-            test_cases = self._llm_test_case_generation(requirements, reviews_map, prd)
+        if requirements:
+            if self.client and self.api_key:
+                if progress_callback:
+                    progress_callback('Using LLM to generate test cases...')
+                test_cases = self._llm_test_case_generation(requirements, reviews_map, prd, progress_callback)
+            else:
+                if progress_callback:
+                    progress_callback('Using rule-based test cases...')
+                test_cases = self._rule_based_test_cases(requirements, reviews_map)
         else:
             if progress_callback:
-                progress_callback('Using rule-based test cases...')
-            test_cases = self._rule_based_test_cases(requirements, reviews_map)
+                progress_callback('No requirements found, generating from analysis...')
+            test_cases = self._test_cases_from_analysis(analysis, prd)
 
         test_cases = self._enrich_test_cases(test_cases, requirements)
 
@@ -77,7 +82,8 @@ class TestCaseGenerator:
         self,
         requirements: list[dict],
         reviews_map: dict,
-        prd: dict
+        prd: dict,
+        progress_callback=None
     ) -> list[dict]:
         req_text = json.dumps(requirements[:15], indent=2, ensure_ascii=False)
 
@@ -128,7 +134,114 @@ Generate test cases:"""
             return test_cases
 
         except (json.JSONDecodeError, Exception):
+            if progress_callback:
+                progress_callback('LLM test case generation failed, falling back to rule-based')
             return self._rule_based_test_cases(requirements, reviews_map)
+
+    def _test_cases_from_analysis(self, analysis: dict, prd: dict) -> list[dict]:
+        test_cases = []
+        tc_id = 1
+        findings = analysis.get('findings', [])
+        themes = analysis.get('themes', [])
+        stats = analysis.get('statistics', {})
+        rating_breakdown = stats.get('rating_breakdown', {})
+
+        for finding in findings:
+            finding_type = finding.get('type', 'problem')
+            severity = finding.get('severity', 'medium')
+            label = finding.get('label', '')
+            source_ids = finding.get('source_review_ids', [])
+
+            tc_type = self._map_requirement_to_test_type(
+                'bug_fix' if finding_type == 'problem' else 'improvement'
+            )
+            tc_priority = self._map_priority_to_test_priority(severity)
+
+            test_case = {
+                'id': f'TC-{tc_id:03d}',
+                'title': f'Verify fix for: {label[:80]}',
+                'requirement_id': f'AUTO-{tc_id:03d}',
+                'type': tc_type,
+                'priority': tc_priority,
+                'preconditions': [
+                    'Application is installed and running',
+                    f'User has scenario relevant to: {label[:60]}'
+                ],
+                'steps': [
+                    f'Identify the user scenario related to: {label[:60]}',
+                    'Execute the specific workflow or feature area',
+                    'Observe the system behavior'
+                ],
+                'expected_results': [
+                    f'The issue "{label}" is addressed',
+                    'User experience is improved',
+                    'No unexpected errors or regressions'
+                ],
+                'source_review_ids': source_ids,
+                'automation_feasible': tc_type != 'ui'
+            }
+            test_cases.append(test_case)
+            tc_id += 1
+
+        if not test_cases and findings:
+            pass
+        elif not test_cases:
+            negative = rating_breakdown.get('negative', 0)
+            positive = rating_breakdown.get('positive', 0)
+
+            if negative > 0:
+                test_cases.append({
+                    'id': f'TC-{tc_id:03d}',
+                    'title': 'Verify resolution of low-rating user complaints',
+                    'requirement_id': 'AUTO-001',
+                    'type': 'regression',
+                    'priority': 'high',
+                    'preconditions': [
+                        'Application is installed and running',
+                        f'{negative} low-rating reviews identified'
+                    ],
+                    'steps': [
+                        'Review all 1-2 star rated user feedback',
+                        'Identify specific features/workflows mentioned in complaints',
+                        'Test each identified workflow'
+                    ],
+                    'expected_results': [
+                        'All issues from negative reviews are addressed',
+                        'User workflows that received low ratings function correctly',
+                        'No crashes, freezes, or data loss'
+                    ],
+                    'source_review_ids': [],
+                    'automation_feasible': True
+                })
+                tc_id += 1
+
+            test_cases.append({
+                'id': f'TC-{tc_id:03d}',
+                'title': 'General user experience verification',
+                'requirement_id': f'AUTO-{tc_id:03d}',
+                'type': 'functional',
+                'priority': 'medium',
+                'preconditions': [
+                    'Application is installed and running',
+                    'Test device meets minimum requirements'
+                ],
+                'steps': [
+                    'Launch the application',
+                    'Complete main user workflows',
+                    'Test key features identified in reviews'
+                ],
+                'expected_results': [
+                    'Application launches without errors',
+                    'All main workflows complete successfully',
+                    'Performance meets user expectations',
+                    f'Overall experience matches {positive} positive review expectations'
+                ],
+                'source_review_ids': [],
+                'automation_feasible': True
+            })
+            tc_id += 1
+
+        return test_cases
 
     def _rule_based_test_cases(
         self,
