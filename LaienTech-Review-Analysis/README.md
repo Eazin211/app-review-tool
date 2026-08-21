@@ -111,22 +111,32 @@ LaienTech-Review-Analysis/
     └── sample_reviews.json # Cached sample reviews
 ```
 
-## 📊 Data Sources
+## ⚠️ Data Source Limitation: iTunes RSS API
+
+> **Important**: Apple's iTunes RSS Customer Reviews API has been progressively deprecated since 2026. As of mid-2026, the API returns empty responses (0 reviews) for the majority of App Store applications, even for popular apps like TikTok, Google Maps, Instagram, Facebook, and others. Only a small number of apps (primarily Pinterest) still return data consistently.
+
+When the RSS API returns no data, the application:
+1. Detects the empty response via `rss_empty` metadata flag
+2. Displays a prominent warning explaining the API limitation
+3. Provides a "Load Sample Data" button for quick demonstration
+4. Offers JSON/CSV file upload for importing custom review data
+
+Users are encouraged to use the **Import JSON/CSV** feature to supply review data for specific applications. The `sample_data/sample_reviews.json` file contains 51 pre-loaded reviews for "Workout for Women: Home Gym" to demonstrate the full analysis pipeline.
 
 ### Primary: App Store RSS Feed
 
 The application uses Apple's official iTunes RSS Customer Reviews API:
 
 - **Endpoint**: `https://itunes.apple.com/{country}/rss/customerreviews/id={APP_ID}/sortBy=mostRecent/page={PAGE}/json`
-- **Rate Limit**: ~500 reviews total (10 pages × 50 reviews)
+- **Rate Limit**: ~500 reviews total (10 pages × 50 reviews) — **Note**: This is a theoretical limit; the API may return 0 reviews for many apps
 - **Fields**: Review ID, title, content, rating, author, version, date
-- **Limitation**: No pagination beyond 10 pages, limited to most recent reviews
+- **Known Limitation**: As of 2026, most apps return 0 reviews via this endpoint. The app handles this gracefully with clear user guidance.
 
 ### Alternative Sources
 
 - **JSON Import**: File with array of review objects or `{"reviews": [...]}` format
 - **CSV Import**: File with columns matching review fields
-- **Sample Data**: Pre-loaded "Workout for Women" reviews for offline testing
+- **Sample Data**: Pre-loaded 51 "Workout for Women" reviews for offline testing and pipeline demonstration
 
 ## 🤖 AI/ML Configuration
 
