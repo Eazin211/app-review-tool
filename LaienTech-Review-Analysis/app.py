@@ -278,41 +278,10 @@ def run_analysis_pipeline(max_pages: int):
 
             if fetch_metadata.get('rss_empty'):
                 st.session_state.rss_metadata = fetch_metadata
-                st.warning("⚠️ iTunes RSS API currently returns no reviews for this app. The RSS API has been progressively deprecated by Apple since 2026.")
-                st.info("**Please load data using one of these methods:**")
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("📂 Load Sample Data (Workout for Women)", type="secondary", use_container_width=True, key="load_sample_fallback"):
-                        reviews = load_sample_data()
-                        source = 'sample'
-                        log(f"Loaded {len(reviews)} sample reviews as fallback")
-                        st.success(f"✅ Loaded {len(reviews)} sample reviews!")
-
-                with col2:
-                    fallback_file = st.file_uploader("📤 Upload JSON/CSV file", type=['json', 'csv'], key="fallback_upload", help="Import your own review data")
-                    if fallback_file:
-                        try:
-                            fallback_file.seek(0)
-                            content = fallback_file.read().decode('utf-8')
-                            if fallback_file.name.endswith('.json'):
-                                data = json.loads(content)
-                                if isinstance(data, list):
-                                    reviews = data
-                                elif isinstance(data, dict) and 'reviews' in data:
-                                    reviews = data['reviews']
-                            elif fallback_file.name.endswith('.csv'):
-                                import io
-                                df = pd.read_csv(io.StringIO(content))
-                                reviews = df.to_dict('records')
-                            source = 'imported'
-                            log(f"Loaded {len(reviews)} reviews from uploaded file")
-                            st.success(f"✅ Loaded {len(reviews)} reviews from file!")
-                        except Exception as e:
-                            st.error(f"Failed to load file: {str(e)}")
-
-                if not reviews or (isinstance(reviews, list) and len(reviews) == 0):
-                    st.stop()
+                log("RSS returned 0 reviews — showing fallback options in main content area")
+                st.session_state.running = False
+                st.rerun()
+                return
             elif not reviews:
                 st.warning("RSS fetch returned no reviews, falling back to sample data.")
                 reviews = load_sample_data()
@@ -420,11 +389,30 @@ def render_main_content():
     if app_info:
         st.markdown(f"**Target App:** {app_info.get('app_name', app_info.get('app_id', 'Unknown'))} | **Country:** {app_info.get('country', 'N/A').upper()}")
 
+    rss_meta = st.session_state.get('rss_metadata', {})
+    if rss_meta.get('rss_empty'):
+        render_rss_empty_warning()
+        return
+
     if not st.session_state.get('reviews_raw'):
         render_empty_state()
         return
 
-    render_pipeline_status()
+    has_analysis = bool(st.session_state.get('analysis'))
+    if not has_analysis:
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown(f"""
+            <div style="text-align: center; padding: 30px 20px; background: #e8f4fd; border-radius: 12px; border: 1px solid #2196f3;">
+                <div style="font-size: 48px; margin-bottom: 8px;">✅</div>
+                <h3 style="color: #1565c0; margin-bottom: 8px;">{len(st.session_state.reviews_raw)} Reviews Loaded</h3>
+                <p style="color: #555; margin-bottom: 16px;">Click <strong>"▶️ Start Analysis"</strong> in the sidebar to run the full pipeline:
+                cleaning, AI analysis, PRD generation, test cases, and validation.</p>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        render_pipeline_status()
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Raw Data", "🧹 Cleaned Data", "🔍 Analysis",
@@ -448,6 +436,89 @@ def render_main_content():
 
     with tab6:
         render_validation_tab()
+
+
+def render_rss_empty_warning():
+    st.markdown("---")
+
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%);
+        border: 2px solid #ffc107;
+        border-radius: 16px;
+        padding: 40px 32px;
+        margin: 20px 0;
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(255, 193, 7, 0.15);
+    ">
+        <div style="font-size: 72px; margin-bottom: 12px;">⚠️</div>
+        <h2 style="color: #856404; margin-bottom: 12px; font-size: 24px;">
+            iTunes RSS API Currently Unavailable
+        </h2>
+        <p style="color: #856404; font-size: 15px; line-height: 1.8; max-width: 600px; margin: 0 auto 20px;">
+            Apple's iTunes RSS Customer Reviews API has been progressively deprecated since 2026.
+            The API returned <strong>0 reviews</strong> for this app. This is a known limitation
+            affecting most applications, not a bug in this tool.
+        </p>
+        <div style="background: rgba(255,255,255,0.5); border-radius: 12px; padding: 16px; margin-top: 16px;">
+            <p style="color: #856404; font-size: 14px; font-weight: 600; margin-bottom: 12px;">
+                📂 Load Data Using One Of These Methods:
+            </p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📂 Load Sample Data\n& Run Analysis", type="primary", use_container_width=True, key="main_load_sample"):
+            from modules.scraper import load_sample_data
+            reviews = load_sample_data()
+            st.session_state.reviews_raw = reviews
+            st.session_state.rss_metadata = {}
+            st.session_state.app_info = {'app_name': 'Workout for Women: Home Gym', 'app_id': '839285684', 'country': 'us'}
+            st.session_state.data_source = 'sample'
+            st.rerun()
+
+    with col2:
+        uploaded = st.file_uploader("📤 Upload JSON/CSV & Run", type=['json', 'csv'], key="main_rss_upload", help="Import your own App Store review data")
+        if uploaded:
+            try:
+                uploaded.seek(0)
+                content = uploaded.read().decode('utf-8')
+                if uploaded.name.endswith('.json'):
+                    data = json.loads(content)
+                    if isinstance(data, list):
+                        st.session_state.reviews_raw = data
+                    elif isinstance(data, dict) and 'reviews' in data:
+                        st.session_state.reviews_raw = data['reviews']
+                elif uploaded.name.endswith('.csv'):
+                    import io
+                    df = pd.read_csv(io.StringIO(content))
+                    st.session_state.reviews_raw = df.to_dict('records')
+                st.session_state.rss_metadata = {}
+                st.session_state.app_info = st.session_state.get('app_info', {'app_name': 'Imported Data', 'app_id': 'custom', 'country': 'us'})
+                st.session_state.data_source = 'imported'
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to load file: {str(e)}")
+
+    st.markdown("""
+    <div style="
+        background: #e8f4fd;
+        border-left: 4px solid #2196f3;
+        padding: 16px 20px;
+        border-radius: 8px;
+        margin-top: 24px;
+        text-align: left;
+    ">
+        <p style="color: #1565c0; margin: 0; font-size: 14px; line-height: 1.8;">
+            <strong>💡 About This Limitation:</strong> Apple retired most RSS Customer Reviews endpoints
+            in 2026. For a small number of apps (like Pinterest) the API still works, but the majority
+            of popular apps return empty responses. We recommend using the "Import JSON/CSV" option
+            with data from third-party services or your own collection.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def render_empty_state():
